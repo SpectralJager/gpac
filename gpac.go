@@ -1,6 +1,7 @@
 package gpac
 
 import (
+	"bytes"
 	"fmt"
 )
 
@@ -98,14 +99,17 @@ func ManyOrOne[a any](pattern ParseFunc[a]) ParseFunc[[]a] {
 	}
 }
 
-func Map[a, b any](pattern ParseFunc[a], mapper func(in a) b) ParseFunc[b] {
+func Map[a, b any](pattern ParseFunc[a], mapper func(in a) (b, error)) ParseFunc[b] {
 	return func(input []byte) Result[b] {
 		result := pattern(input)
 		if result.Error != nil {
 			return Result[b]{Remaining: input, Error: result.Error}
 		}
-		mapped := mapper(result.Ok)
-		return Result[b]{Remaining: result.Remaining, Ok: mapped}
+		val, err := mapper(result.Ok)
+		if err != nil {
+			return Result[b]{Remaining: input, Error: err}
+		}
+		return Result[b]{Remaining: result.Remaining, Ok: val}
 	}
 }
 
@@ -118,4 +122,19 @@ func Error[a any](pattern ParseFunc[a], callback func(Result[a]) error) ParseFun
 		err := callback(result)
 		return Result[a]{Remaining: input, Error: err}
 	}
+}
+
+func Match(pattern string) ParseFunc[bool] {
+	parsers := []ParseFunc[byte]{}
+	buff := bytes.NewBufferString(pattern)
+	for {
+		ch, err := buff.ReadByte()
+		if err != nil {
+			break
+		}
+		parsers = append(parsers, Char(ch))
+	}
+	return Map(And(parsers...), func(in []byte) (bool, error) {
+		return true, nil
+	})
 }
